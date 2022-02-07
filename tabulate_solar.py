@@ -131,7 +131,7 @@ def read_polygenic_out(filepath):
 
 def build_table(rows):
     # Shorthands for traits
-    num_traits = max(len(row["traits"]) for row in rows)
+    num_traits = max((len(row["traits"]) for row in rows), default=0)
     traits = string.ascii_uppercase[:num_traits]
 
     table = []
