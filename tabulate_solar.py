@@ -203,12 +203,20 @@ def main(argv):
 
     rows = []
     for filepath in args.files:
+        filepath = filepath / "polygenic.out"
+        if not filepath.exists():
+            eprint(f"ERROR: SOLAR results not found at '{filepath}'")
+            return 1
+
         try:
-            rows.append(read_polygenic_out(filepath / "polygenic.out"))
+            rows.append(read_polygenic_out(filepath))
         except ParseError as error:
             eprint(f"ERROR: Failed to read '{filepath}': {error}")
             if not args.skip_failures:
                 return 1
+        except Exception:
+            eprint(f"ERROR: Error while reading '{filepath}':")
+            raise
 
     table = build_table(rows)
     header = build_header(table)
