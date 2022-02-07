@@ -216,7 +216,8 @@ def main(argv):
         try:
             rows.append(read_polygenic_out(filepath))
         except ParseError as error:
-            eprint(f"ERROR: Failed to read '{filepath}': {error}")
+            prefix = "WARNING" if args.skip_failures else "ERROR"
+            eprint(f"{prefix}: Failed to read '{filepath}': {error}")
             if not args.skip_failures:
                 return 1
         except Exception:
