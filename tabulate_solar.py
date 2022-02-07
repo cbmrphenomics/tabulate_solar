@@ -178,7 +178,9 @@ def parse_args(argv):
         "files",
         nargs="+",
         type=Path,
-        help="One or more SOLAR log.out files",
+        metavar="PATH",
+        help="One or more SOLAR polygenic.out files or directories containing "
+        "polygenic.out files",
     )
 
     parser.add_argument(
@@ -203,7 +205,10 @@ def main(argv):
 
     rows = []
     for filepath in args.files:
-        filepath = filepath / "polygenic.out"
+        # Directories are assumed to be from SOLAR runs
+        if filepath.is_dir():
+            filepath = filepath / "polygenic.out"
+
         if not filepath.exists():
             eprint(f"ERROR: SOLAR results not found at '{filepath}'")
             return 1
