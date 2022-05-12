@@ -62,6 +62,11 @@ def read_polygenic_out(filepath):
 
             line = handle.readline().strip()
 
+        if not metadata:
+            raise ParseError(f"Metadata not found; not a valid SOLAR file?")
+        elif "Trait" not in metadata:
+            raise ParseError(f"Required trait meta-data not; not a valid SOLAR file?")
+
         # Parse results
         for line in handle:
             # Results are indented twice with a mix of tabs/spaces
