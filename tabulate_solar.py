@@ -11,7 +11,7 @@ from pathlib import Path
 
 # https://hpc.nih.gov/docs/solar-8.1.1/00.contents.html
 
-_RE_VARIABLE_IS = re.compile(r"^(.+) is ([-0-9\.]+)(?:\s+p\s+=\s+([-0-9\.]+))?")
+_RE_VARIABLE_IS = re.compile(r"^(.+) is ([-+0-9\.eE]+)(?:\s+p\s+=\s+([-+0-9\.eE]+))?")
 _RE_NAME_AND_TRAIT = re.compile(r"(.+)\((.+)\)")
 _RE_STD_ERROR = re.compile(r"^(.+)\s+Std. Error:\s+([-.\d]+)")
 _RE_DIFFERENT_FROM = re.compile(r"^(.+) different from\s+(zero|1.0)\s+p = ([-.\d]+)")
