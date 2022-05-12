@@ -41,93 +41,108 @@ def parse_name(name, traits):
         return name, None
 
 
-def read_polygenic_out(filepath):
+def read_polygenic_out_header(handle):
+    # Parse metadata; terminated by empty line
+    line = handle.readline().strip()
+    if line == "The last run of polygenic did not run to completion.":
+        raise ParseError(line)
+
     metadata = {}
-    values = {}
+    while line:
+        last_value = None
+        for value in line.split():
+            if value.endswith(":"):
+                last_key = value[:-1]
+                last_value = metadata[last_key] = []
+            elif last_value is not None:
+                last_value.append(value)
 
-    with filepath.open("rt") as handle:
-        # Parse metadata; terminated by empty line
         line = handle.readline().strip()
-        if line == "The last run of polygenic did not run to completion.":
-            raise ParseError(line)
 
-        while line:
-            last_value = None
-            for value in line.split():
-                if value.endswith(":"):
-                    last_key = value[:-1]
-                    last_value = metadata[last_key] = []
-                elif last_value is not None:
-                    last_value.append(value)
+    if not metadata:
+        raise ParseError(f"Metadata not found; not a valid SOLAR file?")
+    elif "Trait" not in metadata:
+        raise ParseError(f"Required trait meta-data not; not a valid SOLAR file?")
 
-            line = handle.readline().strip()
+    return metadata
 
-        if not metadata:
-            raise ParseError(f"Metadata not found; not a valid SOLAR file?")
-        elif "Trait" not in metadata:
-            raise ParseError(f"Required trait meta-data not; not a valid SOLAR file?")
 
-        # Parse results
-        for line in handle:
-            # Results are indented twice with a mix of tabs/spaces
-            if not line.replace("    ", "\t").startswith("\t\t"):
-                continue
+def read_polygenic_out_value(handle, metadata):
+    values = {}
+    for line in handle:
+        # Results are indented twice with a mix of tabs/spaces
+        if not line.replace("    ", "\t").startswith("\t\t"):
+            continue
 
-            line = line.strip()
+        line = line.strip()
 
-            # H2r is 0.1234567
-            # H2r is 0.1234567  p = 0.0123456
-            # H2r is 0.1234567  p = 0.1234567  (Not Significant)
-            # Variable may include a trait, e.g. "H2r(trait)"
-            match = _RE_VARIABLE_IS.match(line)
-            if match is not None:
-                name, value, pvalue = match.groups()
-                name, trait = parse_name(name, metadata["Trait"])
+        # H2r is 0.1234567
+        # H2r is 0.1234567  p = 0.0123456
+        # H2r is 0.1234567  p = 0.1234567  (Not Significant)
+        # Variable may include a trait, e.g. "H2r(trait)"
+        match = _RE_VARIABLE_IS.match(line)
+        if match is not None:
+            name, value, pvalue = match.groups()
+            name, trait = parse_name(name, metadata["Trait"])
 
-                # Estimates look like other variables:
-                #   Derived Estimate of RhoP is 0.1234567
-                estimated = False
-                if name.startswith("Derived Estimate of "):
-                    estimated = True
-                    name = name[20:]
+            # Estimates look like other variables:
+            #   Derived Estimate of RhoP is 0.1234567
+            estimated = False
+            if name.startswith("Derived Estimate of "):
+                estimated = True
+                name = name[20:]
 
-                values[(name, trait)] = {
-                    "estimated": estimated,
-                    "value": value,
-                    "pvalue": pvalue,
-                    "stderr": None,
-                    "different": [],
-                }
+            values[(name, trait)] = {
+                "estimated": estimated,
+                "value": value,
+                "pvalue": pvalue,
+                "stderr": None,
+                "different": [],
+            }
 
-                continue
+            continue
 
-            # H2r Std. Error:  0.1234567
-            # Variable may include a trait, e.g. "H2r(trait)"
-            match = _RE_STD_ERROR.match(line)
-            if match is not None:
-                name, value = match.groups()
-                name, trait = parse_name(name, metadata["Trait"])
+        # H2r Std. Error:  0.1234567
+        # Variable may include a trait, e.g. "H2r(trait)"
+        match = _RE_STD_ERROR.match(line)
+        if match is not None:
+            name, value = match.groups()
+            name, trait = parse_name(name, metadata["Trait"])
 
-                # The record should have been created by the previous line
-                current = values.get((name, trait))
-                if current is None:
-                    raise ParseError()
+            # The record should have been created by the previous line
+            current = values.get((name, trait))
+            if current is None:
+                raise ParseError()
 
-                current["stderr"] = value
+            current["stderr"] = value
 
-                continue
+            continue
 
-            # RhoG different from zero  p = 0.1234567
-            # RhoG different from 1.0   p = 0.1234567
-            match = _RE_DIFFERENT_FROM.match(line)
-            if match is not None:
-                name, value, pvalue = match.groups()
-                name, trait = parse_name(name, metadata["Trait"])
+        # RhoG different from zero  p = 0.1234567
+        # RhoG different from 1.0   p = 0.1234567
+        match = _RE_DIFFERENT_FROM.match(line)
+        if match is not None:
+            name, value, pvalue = match.groups()
+            name, trait = parse_name(name, metadata["Trait"])
 
-                current = values[(name, trait)]
-                current["different"].append((value, pvalue))
+            current = values[(name, trait)]
+            current["different"].append((value, pvalue))
 
-                continue
+            continue
+
+    return values
+
+
+def read_polygenic_out(filepath):
+    with filepath.open("rt") as handle:
+        try:
+            metadata = read_polygenic_out_header(handle)
+            values = read_polygenic_out_value(handle, metadata)
+        except UnicodeDecodeError as error:
+            # Probably a binary file
+            raise ParseError(f"not a valid text file: {error}")
+        except OSError as error:
+            raise ParseError(repr(error))
 
     return {
         "metadata": metadata,
@@ -213,18 +228,22 @@ def main(argv):
     rows = []
     for filepath in args.files:
         # Directories are assumed to be from SOLAR runs
-        if filepath.is_dir():
-            filepath = filepath / "polygenic.out"
-
-        if not filepath.exists():
-            eprint(f"ERROR: SOLAR results not found at '{filepath}'")
-            return 1
-
         try:
+            if filepath.is_dir():
+                filepath = filepath / "polygenic.out"
+
+            if not filepath.exists():
+                raise ParseError(f"SOLAR results not found at '{filepath}'")
+
             rows.append(read_polygenic_out(filepath))
         except ParseError as error:
             prefix = "WARNING" if args.skip_failures else "ERROR"
             eprint(f"{prefix}: Failed to read '{filepath}': {error}")
+            if not args.skip_failures:
+                return 1
+        except PermissionError as error:
+            prefix = "WARNING" if args.skip_failures else "ERROR"
+            eprint(f"{prefix} Could not access '{filepath}': {error}")
             if not args.skip_failures:
                 return 1
         except Exception:
